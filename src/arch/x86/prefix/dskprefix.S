@@ -110,7 +110,22 @@ probe_loop:
 					/*   (512 bytes from origin, es = cs) */
 	movw	$0x0201, %ax		/* service 2, 1 sector */
 	int	$0x13
-	jc	probe_loop		/* try next value */
+	jnc	got_sectors
+
+	/* Reset the BIOS disk system after a failed read before probing the
+	 * next candidate.  Preserve the boot-sector segments and table index.
+	 */
+	pushw	%si
+	pushw	%ds
+	pushw	%es
+	xorw	%ax, %ax
+	xorw	%dx, %dx
+	int	$0x13
+	popw	%es
+	popw	%ds
+	popw	%si
+	cld
+	jmp	probe_loop
 
 got_sectors: 
 	movw	$msg1end-msg1, %cx
