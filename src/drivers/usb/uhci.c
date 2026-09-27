@@ -1157,14 +1157,31 @@ static int uhci_root_enable ( struct usb_hub *hub, struct usb_port *port ) {
 
 	/* Reset port */
 	portsc = inw ( uhci->regs + UHCI_PORTSC ( port->address ) );
+	portsc &= ~ ( UHCI_PORTSC_RWC | UHCI_PORTSC_WZ );
 	portsc |= UHCI_PORTSC_PR;
 	outw ( portsc, uhci->regs + UHCI_PORTSC ( port->address ) );
 	mdelay ( USB_RESET_DELAY_MS );
-	portsc &= ~UHCI_PORTSC_PR;
+	portsc = inw ( uhci->regs + UHCI_PORTSC ( port->address ) );
+	portsc &= ~ ( UHCI_PORTSC_PR | UHCI_PORTSC_RWC | UHCI_PORTSC_WZ );
 	outw ( portsc, uhci->regs + UHCI_PORTSC ( port->address ) );
 	mdelay ( USB_RESET_RECOVER_DELAY_MS );
 
-	/* Enable port */
+	/* Reset may set the connection and enable change bits.  Acknowledge
+	 * these separately from enabling the port, so that a subsequent
+	 * disconnection cannot be cleared by the enable write.
+	 */
+	portsc = inw ( uhci->regs + UHCI_PORTSC ( port->address ) );
+	if ( ! ( portsc & UHCI_PORTSC_CCS ) )
+		goto disconnected;
+	portsc &= ~ ( UHCI_PORTSC_OCC | UHCI_PORTSC_WZ );
+	portsc |= UHCI_PORTSC_CHANGE;
+	outw ( portsc, uhci->regs + UHCI_PORTSC ( port->address ) );
+
+	/* Enable port without acknowledging any new changes */
+	portsc = inw ( uhci->regs + UHCI_PORTSC ( port->address ) );
+	if ( ! ( portsc & UHCI_PORTSC_CCS ) )
+		goto disconnected;
+	portsc &= ~ ( UHCI_PORTSC_RWC | UHCI_PORTSC_WZ );
 	portsc |= UHCI_PORTSC_PED;
 	outw ( portsc, uhci->regs + UHCI_PORTSC ( port->address ) );
 	mdelay ( USB_RESET_RECOVER_DELAY_MS );
@@ -1184,6 +1201,12 @@ static int uhci_root_enable ( struct usb_hub *hub, struct usb_port *port ) {
 	DBGC ( uhci, "UHCI %s-%d timed out waiting for port to enable "
 	       "(status %04x)\n",  uhci->name, port->address, portsc );
 	return -ETIMEDOUT;
+
+ disconnected:
+	/* Schedule hotplug even if the reset acknowledgement cleared CSC */
+	port->disconnected = 1;
+	usb_port_changed ( port );
+	return -ENODEV;
 }
 
 /**
@@ -1199,7 +1222,8 @@ static int uhci_root_disable ( struct usb_hub *hub, struct usb_port *port ) {
 
 	/* Disable port */
 	portsc = inw ( uhci->regs + UHCI_PORTSC ( port->address ) );
-	portsc &= ~UHCI_PORTSC_PED;
+	portsc &= ~ ( UHCI_PORTSC_PED | UHCI_PORTSC_RWC |
+		      UHCI_PORTSC_WZ );
 	outw ( portsc, uhci->regs + UHCI_PORTSC ( port->address ) );
 
 	return 0;
@@ -1244,6 +1268,7 @@ static int uhci_root_speed ( struct usb_hub *hub, struct usb_port *port ) {
 
 	/* Record disconnections and clear changes */
 	port->disconnected |= ( portsc & UHCI_PORTSC_CSC );
+	portsc &= ~ ( UHCI_PORTSC_OCC | UHCI_PORTSC_WZ );
 	outw ( portsc, uhci->regs + UHCI_PORTSC ( port->address ) );
 
 	return 0;
@@ -1287,6 +1312,7 @@ static void uhci_root_poll ( struct usb_hub *hub, struct usb_port *port ) {
 
 	/* Record disconnections and clear changes */
 	port->disconnected |= ( portsc & UHCI_PORTSC_CSC );
+	portsc &= ~ ( UHCI_PORTSC_OCC | UHCI_PORTSC_WZ );
 	outw ( portsc, uhci->regs + UHCI_PORTSC ( port->address ) );
 
 	/* Report port status change */

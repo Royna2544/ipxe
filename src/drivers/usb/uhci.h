@@ -60,6 +60,9 @@ FILE_SECBOOT ( PERMITTED );
 /** Port reset */
 #define UHCI_PORTSC_PR 0x0200
 
+/** Overcurrent status change (on controllers providing overcurrent status) */
+#define UHCI_PORTSC_OCC 0x0800
+
 /** Low-speed device attached */
 #define UHCI_PORTSC_LS 0x0100
 
@@ -77,6 +80,12 @@ FILE_SECBOOT ( PERMITTED );
 
 /** Port status change mask */
 #define UHCI_PORTSC_CHANGE ( UHCI_PORTSC_CSC | UHCI_PORTSC_PEC )
+
+/** Status bits cleared by writing one */
+#define UHCI_PORTSC_RWC ( UHCI_PORTSC_CHANGE | UHCI_PORTSC_OCC )
+
+/** Reserved bits that must be written as zero */
+#define UHCI_PORTSC_WZ 0xe000
 
 /** Depth-first processing */
 #define UHCI_LINK_DEPTH_FIRST 0x00000004UL
